@@ -52,11 +52,8 @@ st.markdown("""
     .guide-box { border: 2px dashed #01579b; padding: 1rem; border-radius: 12px; background-color: #f0f8ff; color: #000; }
     .info-box { border: 1px solid #ddd; padding: 1rem; border-radius: 8px; background-color: #f9f9f9; font-size: 0.9rem; }
     
-    /* 隱藏逐字稿大區塊 (只留播放器) */
-    .transcript-box { display: none; }
-    
-    /* 播放器優化 */
-    audio { width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 8px; }
+    /* 逐字稿備用區塊 */
+    .transcript-box { background-color: #f8f9fa; border-left: 6px solid #2b2b2b; padding: 15px; margin-top: 10px; margin-bottom: 30px; border-radius: 4px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -79,7 +76,7 @@ async def generate_audio_and_vtt(text):
     communicate = edge_tts.Communicate(clean_text, "zh-TW-HsiaoChenNeural", rate="-2%")
     
     audio_data = b""
-    # ⚠️ 關鍵修正：VTT 檔頭後方必須要有空行，瀏覽器才讀得到！
+    # ⚠️ 關鍵：VTT 檔頭後方必須要有空行
     vtt_lines = ["WEBVTT\n\n"] 
     
     current_sentence = ""
@@ -108,11 +105,11 @@ async def generate_audio_and_vtt(text):
                 
                 current_sentence += word
                 
-                # 斷句邏輯
+                # 斷句邏輯：遇到標點或過長就切斷
                 if word in ["，", "。", "！", "？", "、", "!", "?", ",", "."] or len(current_sentence) > 25:
                     end_time = offset + duration
                     vtt_lines.append(f"{format_time(start_time)} --> {format_time(end_time)}")
-                    vtt_lines.append(f"{current_sentence}\n") # 加上換行
+                    vtt_lines.append(f"{current_sentence}\n") 
                     vtt_lines.append("\n") # 區塊間空行
                     current_sentence = ""
                     start_time = 0 
@@ -127,7 +124,7 @@ async def generate_audio_and_vtt(text):
              vtt_lines.append("（正在播放音訊...請開啟 CC 字幕）\n")
 
         audio_b64 = base64.b64encode(audio_data).decode()
-        vtt_content = "".join(vtt_lines) # 已經有 \n 了
+        vtt_content = "".join(vtt_lines) 
         vtt_b64 = base64.b64encode(vtt_content.encode()).decode()
         
         return audio_b64, vtt_b64
@@ -148,8 +145,7 @@ st.sidebar.markdown("""
 <div class="info-box">
     <b>📢 曉臻老師的叮嚀：</b><br>
     現在是 <b>Podcast 模式</b>！<br>
-    照片已經收起來囉，請專心看講義。<br>
-    如果沒看到字幕，請檢查播放器的設定。<br>
+    畫面上有黑色的字幕機，如果字沒出來，請點一下播放器右下角的「CC」或「三點」圖示。<br>
     <a href="mailto:flyer19820218@gmail.com" style="color: #01579b;">flyer19820218@gmail.com</a>
 </div>
 <br>
@@ -170,6 +166,7 @@ uploaded_file = st.sidebar.file_uploader("📸 照片區：", type=["jpg", "png"
 # --- 初始化 State ---
 if "class_started" not in st.session_state: st.session_state.class_started = False
 if "display_images" not in st.session_state: st.session_state.display_images = []
+if "raw_parts" not in st.session_state: st.session_state.raw_parts = []
 if "audio_b64" not in st.session_state: st.session_state.audio_b64 = None
 if "vtt_b64" not in st.session_state: st.session_state.vtt_b64 = None
 if "error_msg" not in st.session_state: st.session_state.error_msg = None
@@ -231,7 +228,7 @@ if not st.session_state.class_started:
         except: pass
 
     st.divider()
-    # 按鈕區 (縮排修復重點區)
+    # 按鈕區
     if st.button(f"🏃‍♀️ 確認無誤 - 開始今天的 AI 自然課程 (P.{start_page}~P.{start_page+4})", type="primary", use_container_width=True):
         if user_key and os.path.exists(pdf_path):
             with st.status("🏃‍♀️ 曉臻老師正在暖身中...", expanded=True) as status:
@@ -258,6 +255,13 @@ if not st.session_state.class_started:
                     res = MODEL.generate_content([f"{SYSTEM_PROMPT}\n導讀P.{start_page}起內容。"] + images_to_process)
                     raw_res = res.text.replace('\u00a0', ' ')
                     
+                    # 儲存原始文字 (切分)
+                    if "---PAGE_SEP---" in raw_res:
+                        raw_parts_split = [p for p in raw_res.split("---PAGE_SEP---") if p.strip()]
+                    else:
+                        raw_parts_split = [raw_res]
+                    st.session_state.raw_parts = raw_parts_split
+                    
                     st.write("🎙️ 正在錄製語音與生成字幕 (這一步最久，請稍候)...")
                     voice_matches = re.findall(r'\[\[VOICE_START\]\](.*?)\[\[VOICE_END\]\]', raw_res, re.DOTALL)
                     voice_full_text = " ".join(voice_matches) if voice_matches else clean_for_eye(raw_res)
@@ -282,39 +286,4 @@ if not st.session_state.class_started:
 
 else:
     # --- 上課模式：無封面圖，只有播放器+講義 ---
-    st.success("🔔 曉臻老師 Podcast 上線中！")
-    
-    if st.session_state.error_msg:
-        st.error(f"⚠️ 語音生成失敗：{st.session_state.error_msg}")
-    
-    # 播放器與字幕 (CC)
-    if st.session_state.audio_b64:
-        st.markdown("**👇 請點擊播放器右下角的「三點」或「CC」圖示開啟字幕！**")
-        audio_player_html = f"""
-        <style>
-         video::cue, audio::cue {{
-            background-color: rgba(0, 0, 0, 0.7) !important;
-            color: white !important;
-            font-family: 'HanziPen SC', sans-serif !important;
-            font-size: 1.2rem !important;
-            text-shadow: 1px 1px 2px black !important;
-         }}
-        </style>
-        <audio controls autoplay style="width: 100%; margin-bottom: 20px;">
-            <source src="data:audio/mp3;base64,{st.session_state.audio_b64}" type="audio/mp3">
-            <track kind="subtitles" src="data:text/vtt;base64,{st.session_state.vtt_b64}" srclang="zh" label="Chinese" default>
-            您的瀏覽器不支援字幕功能。
-        </audio>
-        """
-        st.markdown(audio_player_html, unsafe_allow_html=True)
-
-    st.divider()
-
-    # 顯示講義 (無文字稿，只有圖片)
-    for i, (p_num, img) in enumerate(st.session_state.display_images):
-        st.image(img, caption=f"🏁 第 {p_num} 頁講義", use_container_width=True)
-        st.divider()
-
-    if st.button("🏁 下課休息 (回到首頁)"):
-        st.session_state.class_started = False
-        st.rerun()
+    st.success("🔔
