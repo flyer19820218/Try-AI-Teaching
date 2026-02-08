@@ -197,7 +197,7 @@ SYSTEM_PROMPT = r"""
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1: vol_select = st.selectbox("📚 冊別選擇", ["第一冊", "第二冊", "第三冊", "第四冊", "第五冊", "第六冊"], index=3)
 with col2: chap_select = st.selectbox("🧪 章節選擇", ["第一章", "第二章", "第三章", "第四章", "第五章", "第六章"], index=0)
-with col3: start_page = st.number_input("🏁 起始頁碼", 1, 200, 1, key="start_pg") 
+with col3: start_page = st.number_input("🏁 起始頁碼", 1, 200, 1, key="start_pg")
 
 filename = f"{vol_select}_{chap_select}.pdf"
 pdf_path = os.path.join("data", filename)
@@ -215,17 +215,15 @@ if not st.session_state.class_started:
             
     if cover_image_path:
         try:
-            # 讓封面圖佔據視覺焦點
             st.image(Image.open(cover_image_path), use_container_width=True)
         except Exception:
             st.info("🏃‍♀️ 曉臻老師正在操場跑步熱身中...")
     else:
         st.info("🏃‍♀️ 曉臻老師正在起跑線上準備中...")
 
-    st.divider() # 加一條分隔線
+    st.divider()
 
-    # 🌟 修改點 2：講義預覽改成「主動觸發」，預設隱藏
-    # 使用 checkbox 讓學生自己決定要不要看，不勾選時就不會佔版面
+    # 🌟 修改點 2：講義預覽改成「主動觸發」，預設隱藏 (情緒價值優化)
     show_preview = st.checkbox("👀 我想先偷看一下講義內容 (預覽模式)", value=False)
     
     if show_preview:
@@ -245,10 +243,9 @@ if not st.session_state.class_started:
         else:
             st.warning(f"📂 找不到講義：{filename}")
 
-    # 🚀 3. 開始按鈕 (放在最下方，當作最終行動呼籲)
+    # 🚀 3. 開始按鈕
     st.divider()
     if st.button(f"🏃‍♀️ 確認無誤 - 開始今天的 AI 自然課程 (P.{start_page}~P.{start_page+4})", type="primary", use_container_width=True):
-        # ... (這裡的備課邏輯保持不變，照抄原本的即可) ...
         if user_key and os.path.exists(pdf_path):
             with st.spinner("曉臻正在超音速備課中..."):
                 try:
@@ -292,3 +289,29 @@ if not st.session_state.class_started:
             st.warning("🔑 請先輸入實驗室啟動金鑰。")
         else:
             st.error(f"📂 找不到講義文件：{filename}")
+
+else:
+    # 狀態 B: 上課中顯示
+    st.success("🔔 曉臻老師正在上課中！")
+    if st.session_state.audio_html: 
+        st.markdown(st.session_state.audio_html, unsafe_allow_html=True)
+    st.divider()
+
+    raw_text = st.session_state.get("res_text", "").replace('\u00a0', ' ')
+    parts = [p.strip() for p in raw_text.split("---PAGE_SEP---") if p.strip()] 
+
+    if len(parts) > 0:
+        with st.chat_message("曉臻"): 
+            st.markdown(clean_for_eye(parts[0]))
+
+    for i, (p_num, img) in enumerate(st.session_state.display_images):
+        st.image(img, caption=f"🏁 第 {p_num} 頁講義", use_container_width=True)
+        if (i + 1) < len(parts):
+            with st.container():
+                st.markdown(f'<div class="transcript-box"><b>📜 曉臻老師的逐字稿 (P.{p_num})：</b></div>', unsafe_allow_html=True)
+                st.markdown(clean_for_eye(parts[i+1]))
+        st.divider()
+
+    if st.button("🏁 下課休息 (回到首頁)"):
+        st.session_state.class_started = False
+        st.rerun()
